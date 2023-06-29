@@ -1,0 +1,5 @@
+	cond	dist	num_units	max_num_cells/unit	min_num_cells/unit	error_rate
+0	2-9	0	144	5	2	0.375
+0	3-9	0	40	3	2	0.125
+0	4-9	0	15	3	2	0.0
+0	5-9	0	4	3	2	0.0

@@ -1,0 +1,81 @@
+# Raw fastq files are available at ArrayExpress accession E-MTAB-12819.
+# See supplemental information of the associated paper for DNA barcode sequences
+
+export LC_ALL=ja_JP.UTF-8
+export F1=PATH_TO_cDNA_R1.fastq.gz
+export F2=PATH_TO_cDNA_R2.fastq.gz
+export Fi1=PATH_TO_barcode_R1.fastq.gz
+export Fi2=PATH_TO_barcode_R2.fastq.gz
+export dir=PATH_TO_DIR
+export id=[fk208_2022-05-11-10X_re for rep1], [fk209_2022-05-24-10X_re for rep2]
+export ncore=12
+export out_prefix="~/PATH/cDNA_$id"
+export genomeDir="~/PATH//STAR_GRCh38"
+export fasta="~/PATH/STAR_GRCh38/GRCh38.primary_assembly.genome.fa"
+export gtf="~/PATH/STAR_GRCh38/gencode.v41.annotation.gtf"
+
+# Obtaining cell barcodes
+
+umi_tools whitelist --stdin $F1 \
+--extract-method=string \
+--bc-pattern=CCCCCCCCCCCCCCCCNNNNNNNNNNNN \
+--set-cell-number=8000 \
+--method=umis \
+--plot-prefix=expect_whitelist_$id \
+--error-correct-threshold=2 \
+--ed-above-threshold=correct \
+--log2stderr > $dir/whitelist_$id.txt
+
+cat $dir/whitelist_$id.txt | tr "\\t" "," > $dir/whitelist_$id.csv
+
+# Counting UMIs for DNA barcodes
+
+CITE-seq-Count --read1 $Fi1 --read2 $Fi2 \
+--tags PATH_TO_barcode_list.csv \
+--max-error 1 \
+--cell_barcode_first_base 1 \
+--cell_barcode_last_base 16 \
+--umi_first_base 17 \
+--umi_last_base 28 \
+--dense \
+--whitelist $dir/whitelist_$id.csv \
+-cells 8000 -o $dir/out
+
+
+# Barcode_extract for cDNA library
+	umi_tools extract --bc-pattern=CCCCCCCCCCCCCCCCNNNNNNNNNNNN \
+	--stdin ${F1} \
+	--stdout ${dir}/R1_${id}.fastq.gz \
+	--read2-in ${F2} \
+	--read2-out ${dir}/R2_${id}.fastq.gz \
+	--filter-cell-barcode \
+	--error-correct-cell \
+	--whitelist=${dir}/whitelist_${id}.txt
+
+# rna_seq_fastq2count for cDNA library
+	STAR --runThreadN 12 \
+	--genomeDir ${genomeDir} \
+	--readFilesIn ${dir}/R2_${id}.fastq.gz \
+	--readFilesCommand zcat \
+	--outFilterMultimapNmax 1 \
+	--outSAMtype BAM SortedByCoordinate \
+	--outFileNamePrefix ${out_prefix}.star.
+
+
+#Assign_reads_to_genes for cDNA library
+	featureCounts -a ${gtf} \
+	-o ${out_prefix}.star.gene_counts.txt \
+	-R BAM ${out_prefix}.star.Aligned.sortedByCoord.out.bam \
+	-T 12
+
+#Filtering for cDNA library
+	samtools sort ${out_prefix}.star.Aligned.sortedByCoord.out.bam.featureCounts.bam \
+	-o ${out_prefix}.star.gene_counts.sorted.bam
+
+	samtools index ${out_prefix}.star.gene_counts.sorted.bam
+
+#Count_UMIs_per_gene_per_cell
+	umi_tools count --per-gene --gene-tag XT --assigned-status-tag XS --per-cell \
+	-I ${out_prefix}.star.gene_counts.sorted.bam \
+	-S ${out_prefix}.star.gene_cell_counts.txt.gz \
+	--log2stderr
